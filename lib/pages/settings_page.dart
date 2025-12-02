@@ -1,43 +1,29 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:shared_preferences/shared_preferences.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../providers/settings_provider.dart';
 
-class SettingsPage extends StatefulWidget {
+/// 설정 화면
+class SettingsPage extends ConsumerStatefulWidget {
   const SettingsPage({super.key});
+
   @override
-  State<SettingsPage> createState() => _SettingsPageState();
+  ConsumerState<SettingsPage> createState() => _SettingsPageState();
 }
 
-enum Preset { beginner, normal, hard, custom }
-
-class _SettingsPageState extends State<SettingsPage> {
-  // ───── 프리셋 기본값 (횟수/휴식/세트수[=카드 장수]) ─────
-  static const _defaults = {
-    Preset.beginner: {'A': 20, 'J': 10, 'Q': 12, 'K': 15, 'Joker': 30, 'Rest': 30, 'TotalSets': 20},
-    Preset.normal:   {'A': 30, 'J': 15, 'Q': 20, 'K': 25, 'Joker': 40, 'Rest': 45, 'TotalSets': 36},
-    Preset.hard:     {'A': 40, 'J': 20, 'Q': 25, 'K': 30, 'Joker': 50, 'Rest': 30, 'TotalSets': 54},
-  };
-
-  // 상태
-  Preset _preset = Preset.beginner; // 기본: 초보
-  double _restSec = 30;
-  int _totalSets = 20; // 카드 장수(1~54)
-
-  // 변경 여부(추후 UI 마커 등에 사용할 수 있어 유지)
-  bool _dirty = false;
-
+class _SettingsPageState extends ConsumerState<SettingsPage> {
   // 횟수 컨트롤러
-  final _aCtrl     = TextEditingController(text: '20');
-  final _jCtrl     = TextEditingController(text: '10');
-  final _qCtrl     = TextEditingController(text: '12');
-  final _kCtrl     = TextEditingController(text: '15');
-  final _jokerCtrl = TextEditingController(text: '30');
+  final _aCtrl     = TextEditingController();
+  final _jCtrl     = TextEditingController();
+  final _qCtrl     = TextEditingController();
+  final _kCtrl     = TextEditingController();
+  final _jokerCtrl = TextEditingController();
 
   // 문양 매핑 컨트롤러
-  final _spadeCtrl   = TextEditingController(text: '푸시업'); // ♠ 검정
-  final _diamondCtrl = TextEditingController(text: '스쿼트'); // ♦ 빨강
-  final _heartCtrl   = TextEditingController(text: '버피');   // ♥ 빨강
-  final _clubCtrl    = TextEditingController(text: '런지');   // ♣ 검정
+  final _spadeCtrl   = TextEditingController();
+  final _diamondCtrl = TextEditingController();
+  final _heartCtrl   = TextEditingController();
+  final _clubCtrl    = TextEditingController();
 
   // 문양 입력 에러 상태(빈칸 검증용)
   bool _errDiamond = false;
@@ -48,30 +34,43 @@ class _SettingsPageState extends State<SettingsPage> {
   // 스낵바(토스트) 스로틀
   DateTime? _lastToastAt;
 
-  // 저장 키
-  static const _kPreset    = 'settings.preset';
-  static const _kA         = 'settings.A';
-  static const _kJ         = 'settings.J';
-  static const _kQ         = 'settings.Q';
-  static const _kK         = 'settings.K';
-  static const _kJoker     = 'settings.Joker';
-  static const _kRest      = 'settings.Rest';
-  static const _kTotalSets = 'settings.TotalSets';
-
-  static const _kSpade   = 'settings.Spade';
-  static const _kDiamond = 'settings.Diamond';
-  static const _kHeart   = 'settings.Heart';
-  static const _kClub    = 'settings.Club';
+  // 초기 로드 플래그
+  bool _isInitialized = false;
 
   @override
   void initState() {
     super.initState();
-    _loadPrefs();
     // 입력 시 에러 해제
     _diamondCtrl.addListener(() => _clearErrorIfFilled('diamond'));
     _heartCtrl.addListener(() => _clearErrorIfFilled('heart'));
     _spadeCtrl.addListener(() => _clearErrorIfFilled('spade'));
     _clubCtrl.addListener(() => _clearErrorIfFilled('club'));
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+
+    // Riverpod 상태를 TextEditingController에 동기화 (초기 1회만)
+    if (!_isInitialized) {
+      final settings = ref.read(settingsProvider);
+      _syncControllersFromSettings(settings);
+      _isInitialized = true;
+    }
+  }
+
+  /// Riverpod 설정을 TextEditingController에 동기화
+  void _syncControllersFromSettings(settings) {
+    _aCtrl.text = '${settings.aCount}';
+    _jCtrl.text = '${settings.jCount}';
+    _qCtrl.text = '${settings.qCount}';
+    _kCtrl.text = '${settings.kCount}';
+    _jokerCtrl.text = '${settings.jokerCount}';
+
+    _spadeCtrl.text = settings.spadeExercise;
+    _diamondCtrl.text = settings.diamondExercise;
+    _heartCtrl.text = settings.heartExercise;
+    _clubCtrl.text = settings.clubExercise;
   }
 
   @override
@@ -86,114 +85,6 @@ class _SettingsPageState extends State<SettingsPage> {
     _heartCtrl.dispose();
     _clubCtrl.dispose();
     super.dispose();
-  }
-
-  Future<void> _loadPrefs() async {
-    final sp = await SharedPreferences.getInstance();
-
-    _preset = Preset.values[sp.getInt(_kPreset) ?? Preset.beginner.index];
-
-    final base = _defaults[Preset.beginner]!;
-    final a     = sp.getInt(_kA)         ?? base['A']!;
-    final j     = sp.getInt(_kJ)         ?? base['J']!;
-    final q     = sp.getInt(_kQ)         ?? base['Q']!;
-    final k     = sp.getInt(_kK)         ?? base['K']!;
-    final joker = sp.getInt(_kJoker)     ?? base['Joker']!;
-    final rest  = sp.getInt(_kRest)      ?? base['Rest']!;
-    final sets  = sp.getInt(_kTotalSets) ?? base['TotalSets']!;
-
-    final spade   = sp.getString(_kSpade)   ?? '푸시업';
-    final diamond = sp.getString(_kDiamond) ?? '스쿼트';
-    final heart   = sp.getString(_kHeart)   ?? '버피';
-    final club    = sp.getString(_kClub)    ?? '런지';
-
-    setState(() {
-      _aCtrl.text = '$a';
-      _jCtrl.text = '$j';
-      _qCtrl.text = '$q';
-      _kCtrl.text = '$k';
-      _jokerCtrl.text = '$joker';
-      _restSec = rest.toDouble();
-      _totalSets = sets.clamp(1, 54); // 안전장치
-
-      _spadeCtrl.text = spade;
-      _diamondCtrl.text = diamond;
-      _heartCtrl.text = heart;
-      _clubCtrl.text = club;
-
-      _dirty = false; // 로드 직후는 깨끗
-    });
-
-    _ensureCustomIfMismatched(); // preset 표시만 맞춤(저장은 하지 않음)
-  }
-
-  Future<void> _savePrefs() async {
-    final sp = await SharedPreferences.getInstance();
-    await sp.setInt(_kPreset, _preset.index);
-
-    await sp.setInt(_kA,     _parseOr(_aCtrl.text, 0));
-    await sp.setInt(_kJ,     _parseOr(_jCtrl.text, 0));
-    await sp.setInt(_kQ,     _parseOr(_qCtrl.text, 0));
-    await sp.setInt(_kK,     _parseOr(_kCtrl.text, 0));
-    await sp.setInt(_kJoker, _parseOr(_jokerCtrl.text, 0));
-    await sp.setInt(_kRest,  _restSec.round());
-    await sp.setInt(_kTotalSets, _totalSets.clamp(1, 54));
-
-    await sp.setString(_kSpade,   _spadeCtrl.text.trim());
-    await sp.setString(_kDiamond, _diamondCtrl.text.trim());
-    await sp.setString(_kHeart,   _heartCtrl.text.trim());
-    await sp.setString(_kClub,    _clubCtrl.text.trim());
-  }
-
-  void _applyPreset(Preset p) {
-    if (p == Preset.custom) {
-      setState(() => _preset = p);
-      _dirty = true; // 저장은 하지 않음
-      return;
-    }
-    final m = _defaults[p]!;
-    setState(() {
-      _preset = p;
-      _aCtrl.text     = '${m['A']}';
-      _jCtrl.text     = '${m['J']}';
-      _qCtrl.text     = '${m['Q']}';
-      _kCtrl.text     = '${m['K']}';
-      _jokerCtrl.text = '${m['Joker']}';
-      _restSec        = (m['Rest'] as int).toDouble();
-      _totalSets      = m['TotalSets'] as int; // 프리셋에 맞게 세트도 적용
-      _dirty = true;
-    });
-  }
-
-  void _markCustomAfterChangeNumeric() {
-    if (_preset != Preset.custom) {
-      setState(() => _preset = Preset.custom);
-    }
-    _dirty = true; // 저장 X
-  }
-
-  void _ensureCustomIfMismatched() {
-    if (_preset == Preset.custom) return;
-    final m = _defaults[_preset]!;
-    final a     = _parseOr(_aCtrl.text, 0);
-    final j     = _parseOr(_jCtrl.text, 0);
-    final q     = _parseOr(_qCtrl.text, 0);
-    final k     = _parseOr(_kCtrl.text, 0);
-    final joker = _parseOr(_jokerCtrl.text, 0);
-    final rest  = _restSec.round();
-    final sets  = _totalSets;
-
-    final same = (a == m['A'] &&
-                  j == m['J'] &&
-                  q == m['Q'] &&
-                  k == m['K'] &&
-                  joker == m['Joker'] &&
-                  rest == m['Rest'] &&
-                  sets == m['TotalSets']);
-    if (!same) {
-      setState(() => _preset = Preset.custom);
-      _dirty = true; // 저장 X
-    }
   }
 
   int _parseOr(String s, int fb) {
@@ -253,20 +144,18 @@ class _SettingsPageState extends State<SettingsPage> {
     );
   }
 
-  // 문양 텍스트 onChanged (8글자 제한 안내 + 커스텀 전환) — 저장하지 않음
+  // 문양 텍스트 onChanged (8글자 제한 안내 + 커스텀 전환)
   void _onSuitChanged(String value) {
     if (value.length == 8) {
       _showToast('최대 8글자까지 입력할 수 있어요.');
     }
-    if (_preset != Preset.custom) {
-      setState(() => _preset = Preset.custom);
-    }
-    _dirty = true; // 저장 X
   }
 
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
+    final settings = ref.watch(settingsProvider);
+    final preset = ref.watch(presetProvider);
 
     return Scaffold(
       appBar: AppBar(title: const Text('설정')),
@@ -280,15 +169,22 @@ class _SettingsPageState extends State<SettingsPage> {
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
             child: Padding(
               padding: const EdgeInsets.all(2),
-              child: SegmentedButton<Preset>(
+              child: SegmentedButton<SettingsPreset>(
                 segments: const [
-                  ButtonSegment(value: Preset.beginner, label: Text('초보', style:TextStyle(fontSize: 14)),   icon: Icon(Icons.flag)),
-                  ButtonSegment(value: Preset.normal,   label: Text('기본', style:TextStyle(fontSize: 14)),   icon: Icon(Icons.star_half)),
-                  ButtonSegment(value: Preset.hard,     label: Text('하드', style:TextStyle(fontSize: 14)),   icon: Icon(Icons.whatshot)),
-                  ButtonSegment(value: Preset.custom,   label: Text('커스텀', style:TextStyle(fontSize: 14)), icon: Icon(Icons.tune)),
+                  ButtonSegment(value: SettingsPreset.beginner, label: Text('초보', style:TextStyle(fontSize: 14)),   icon: Icon(Icons.flag)),
+                  ButtonSegment(value: SettingsPreset.normal,   label: Text('기본', style:TextStyle(fontSize: 14)),   icon: Icon(Icons.star_half)),
+                  ButtonSegment(value: SettingsPreset.hard,     label: Text('하드', style:TextStyle(fontSize: 14)),   icon: Icon(Icons.whatshot)),
+                  ButtonSegment(value: SettingsPreset.custom,   label: Text('커스텀', style:TextStyle(fontSize: 14)), icon: Icon(Icons.tune)),
                 ],
-                selected: {_preset},
-                onSelectionChanged: (s) => _applyPreset(s.first),
+                selected: {preset},
+                onSelectionChanged: (s) {
+                  ref.read(settingsProvider.notifier).changePreset(s.first);
+                  // Riverpod 상태 변경 시 TextEditingController 동기화
+                  Future.microtask(() {
+                    final newSettings = ref.read(settingsProvider);
+                    _syncControllersFromSettings(newSettings);
+                  });
+                },
                 showSelectedIcon: false,
                 style: ButtonStyle(
                   shape: WidgetStatePropertyAll(
@@ -311,16 +207,17 @@ class _SettingsPageState extends State<SettingsPage> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text('${_restSec.round()} 초', style: Theme.of(context).textTheme.bodyLarge),
+                  Text('${settings.restSeconds} 초', style: Theme.of(context).textTheme.bodyLarge),
                   Slider(
-                    value: _restSec,
+                    value: settings.restSeconds.toDouble(),
                     min: 0,
                     max: 90,
                     divisions: 18,
-                    label: '${_restSec.round()}초',
+                    label: '${settings.restSeconds}초',
                     onChanged: (v) {
-                      setState(() => _restSec = v);
-                      _markCustomAfterChangeNumeric();
+                      ref.read(settingsProvider.notifier).updateSettings(
+                        settings.copyWith(restSeconds: v.round())
+                      );
                     },
                   ),
                 ],
@@ -343,18 +240,19 @@ class _SettingsPageState extends State<SettingsPage> {
                   const SizedBox(width: 16),
                   Expanded(
                     child: Slider(
-                      value: _totalSets.toDouble(),
+                      value: settings.totalSets.toDouble(),
                       min: 1,
                       max: 54,
                       divisions: 53,
-                      label: "$_totalSets 장",
+                      label: "${settings.totalSets} 장",
                       onChanged: (v) {
-                        setState(() => _totalSets = v.round());
-                        _markCustomAfterChangeNumeric();
+                        ref.read(settingsProvider.notifier).updateSettings(
+                          settings.copyWith(totalSets: v.round())
+                        );
                       },
                     ),
                   ),
-                  Text("$_totalSets 장", style: const TextStyle(fontSize: 16)),
+                  Text("${settings.totalSets} 장", style: const TextStyle(fontSize: 16)),
                 ],
               ),
             ),
@@ -374,35 +272,35 @@ class _SettingsPageState extends State<SettingsPage> {
                   _NumberRow(
                     label: 'A',
                     controller: _aCtrl,
-                    onChanged: (_) => _markCustomAfterChangeNumeric(),
+                    onChanged: (_) {}, // TextEditingController만 업데이트, 저장은 적용 버튼에서
                     toast: _showToast,
                   ),
                   const Divider(height: 12),
                   _NumberRow(
                     label: 'J',
                     controller: _jCtrl,
-                    onChanged: (_) => _markCustomAfterChangeNumeric(),
+                    onChanged: (_) {},
                     toast: _showToast,
                   ),
                   const Divider(height: 12),
                   _NumberRow(
                     label: 'Q',
                     controller: _qCtrl,
-                    onChanged: (_) => _markCustomAfterChangeNumeric(),
+                    onChanged: (_) {},
                     toast: _showToast,
                   ),
                   const Divider(height: 12),
                   _NumberRow(
                     label: 'K',
                     controller: _kCtrl,
-                    onChanged: (_) => _markCustomAfterChangeNumeric(),
+                    onChanged: (_) {},
                     toast: _showToast,
                   ),
                   const Divider(height: 12),
                   _NumberRow(
                     label: 'Joker',
                     controller: _jokerCtrl,
-                    onChanged: (_) => _markCustomAfterChangeNumeric(),
+                    onChanged: (_) {},
                     toast: _showToast,
                   ),
                 ],
@@ -467,15 +365,27 @@ class _SettingsPageState extends State<SettingsPage> {
             width: double.infinity,
             height: 48,
             child: FilledButton.icon(
-              onPressed: () async {
+              onPressed: () {
                 if (!_validateSuits()) return;
 
-                _ensureCustomIfMismatched(); // 표시만 맞추기
-                await _savePrefs();          // ← 저장은 여기서만!
-                _dirty = false;
-
+                // TextEditingController 값을 Riverpod 상태에 최종 동기화
+                final current = ref.read(settingsProvider);
+                ref.read(settingsProvider.notifier).updateSettings(
+                  current.copyWith(
+                    aCount: _parseOr(_aCtrl.text, 0),
+                    jCount: _parseOr(_jCtrl.text, 0),
+                    qCount: _parseOr(_qCtrl.text, 0),
+                    kCount: _parseOr(_kCtrl.text, 0),
+                    jokerCount: _parseOr(_jokerCtrl.text, 0),
+                    spadeExercise: _spadeCtrl.text.trim(),
+                    diamondExercise: _diamondCtrl.text.trim(),
+                    heartExercise: _heartCtrl.text.trim(),
+                    clubExercise: _clubCtrl.text.trim(),
+                  )
+                );
+                // SettingsNotifier가 자동 저장
                 _showToast('저장되었습니다');
-                if (mounted) Navigator.pop(context); // 닫기
+                Navigator.pop(context);
               },
               icon: const Icon(Icons.check),
               label: const Text('적용'),
@@ -617,7 +527,7 @@ class _SuitTextRow extends StatelessWidget {
   final Color labelColor;
   final String title;              // '다이아' 텍스트
   final _SuitWhich which;          // 어떤 문양인지
-  final ValueChanged<String> onChanged; // 길이 8 안내 및 커스텀 전환
+  final ValueChanged<String> onChanged; // 길이 8 안내
   final void Function(String) toast;
 
   const _SuitTextRow({
@@ -677,7 +587,7 @@ class _SuitTextRow extends StatelessWidget {
               if (v.length == 8) {
                 toast('최대 8글자까지 입력할 수 있어요.');
               }
-              onChanged(v); // preset → custom 전환 등 (저장 X)
+              onChanged(v);
             },
             decoration: InputDecoration(
               isDense: true,

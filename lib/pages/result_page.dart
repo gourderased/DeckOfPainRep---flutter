@@ -1,38 +1,23 @@
 import 'package:flutter/material.dart';
+import '../data/models/workout_result.dart';
 
+/// 운동 결과 화면
 class ResultPage extends StatelessWidget {
-  final int totalSeconds;                      // 총 운동 시간(초)
-  final Map<String, int> countsByExercise;     // 운동명 → 총 횟수
-  final int totalCards;                        // 완료 카드 수
-  final Map<String, String> exerciseToSuit;    // 운동명 → 'spade'|'diamond'|'heart'|'clover'
+  final WorkoutResult result;
 
-  const ResultPage({
-    super.key,
-    required this.totalSeconds,
-    required this.countsByExercise,
-    required this.totalCards,
-    required this.exerciseToSuit,
-  });
+  const ResultPage({super.key, required this.result});
 
-  // mm:ss
-  String _formatMMSS(int sec) {
-    final m = (sec ~/ 60).toString().padLeft(2, '0');
-    final s = (sec % 60).toString().padLeft(2, '0');
-    return '$m:$s';
-  }
-
-  // 무늬 텍스트 아이콘(이모지) + 색상
   Widget _suitIcon(String? suit) {
     const ts = TextStyle(fontSize: 18, fontWeight: FontWeight.w700);
     switch (suit) {
       case 'diamond':
-        return Text('♦', style: ts.copyWith(color: const Color(0xFFE53935))); // 빨강
+        return Text('♦', style: ts.copyWith(color: const Color(0xFFE53935)));
       case 'heart':
-        return Text('♥', style: ts.copyWith(color: const Color(0xFFE53935))); // 빨강
+        return Text('♥', style: ts.copyWith(color: const Color(0xFFE53935)));
       case 'spade':
-        return Text('♠', style: ts.copyWith(color: const Color(0xFFBDBDBD))); // 밝은 회색
+        return Text('♠', style: ts.copyWith(color: const Color(0xFFBDBDBD)));
       case 'clover':
-        return Text('♣', style: ts.copyWith(color: const Color(0xFFBDBDBD))); // 밝은 회색
+        return Text('♣', style: ts.copyWith(color: const Color(0xFFBDBDBD)));
       default:
         return const Icon(Icons.fitness_center, color: Colors.white70);
     }
@@ -42,16 +27,15 @@ class ResultPage extends StatelessWidget {
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
 
-    // ----- 정렬: 다이아 ▶ 하트 ▶ 스페이드 ▶ 클로버 -----
+    // 정렬: 다이아 → 하트 → 스페이드 → 클로버
     const suitOrder = ['diamond', 'heart', 'spade', 'clover'];
-    final items = countsByExercise.entries.toList()
+    final items = result.countsByExercise.entries.toList()
       ..sort((a, b) {
-        final sa = exerciseToSuit[a.key] ?? '~';
-        final sb = exerciseToSuit[b.key] ?? '~';
+        final sa = result.exerciseToSuit[a.key] ?? '~';
+        final sb = result.exerciseToSuit[b.key] ?? '~';
         final ia = suitOrder.indexOf(sa);
         final ib = suitOrder.indexOf(sb);
         if (ia != ib) return ia.compareTo(ib);
-        // 같은 무늬면 이름으로 정렬(가나다/알파벳)
         return a.key.compareTo(b.key);
       });
 
@@ -69,7 +53,7 @@ class ResultPage extends StatelessWidget {
           children: [
             const SizedBox(height: 24),
 
-            // 상단 요약 카드(시간/완료 카드 수)
+            // 상단 요약 카드
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16),
               child: Card(
@@ -80,9 +64,9 @@ class ResultPage extends StatelessWidget {
                   padding: const EdgeInsets.all(20),
                   child: Column(
                     children: [
-                      _StatRow(icon: Icons.timer, label: "총 운동 시간", value: _formatMMSS(totalSeconds)),
+                      _StatRow(icon: Icons.timer, label: "총 운동 시간", value: result.formattedTime),
                       const SizedBox(height: 12),
-                      _StatRow(icon: Icons.check_circle, label: "완료 카드 수", value: "$totalCards 장"),
+                      _StatRow(icon: Icons.check_circle, label: "완료 카드 수", value: "${result.totalCards} 장"),
                     ],
                   ),
                 ),
@@ -116,7 +100,7 @@ class ResultPage extends StatelessWidget {
                     itemBuilder: (_, i) {
                       final e = items[i];
                       if (e.value == 0) return const SizedBox.shrink();
-                      final suit = exerciseToSuit[e.key]; // 운동명으로 무늬 조회
+                      final suit = result.exerciseToSuit[e.key];
                       return ListTile(
                         leading: _suitIcon(suit),
                         title: Text(
